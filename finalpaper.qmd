@@ -1,0 +1,222 @@
+---
+title: "Replication Paper - PS403 (Introduction to Probability and Statistics)"
+author:
+  - 'Natália Pimenta^[Ph.D. Student in Political Science, Northwestern University. Email: <ncspimenta@northwestern.edu>]'
+date: today
+date-format: long
+abstract: |
+  \singlespacing This paper replicates and extends Padilla’s (2025) analysis of how transitional justice (TJ) trials relate to satisfaction with democracy (SWD) in Latin America. I first reproduce the study’s cross-national and individual-level results and then reassess them using corrected coding for transitional justice events in eight Latin American countries. I examine the robustness of the central pattern, i.e., higher satisfaction with democracy among left-leaning citizens in years with trials, across a series of empirical checks, including alternative outcome measures, interactions with other TJ mechanisms, institutional trust models, and leave-one-out tests. The replicated findings closely track the original correlations but prove specific to performance-based evaluations of democracy: the patterns do not generalize to more abstract democratic support, nor do they consistently appear in assessments of state institutions. These results underscore the importance of treatment coding, outcome choice, and clustered inference in studies linking transitional justice to public attitudes, and they point to the value of further work on the dynamics and mechanisms underlying mass responses to accountability processes.
+format: 
+  pdf:
+    documentclass: article 
+fontsize: 12pt
+number-sections: true
+urlcolor: blue
+bibliography: references.bib
+geometry:
+  - left=1in
+  - right=1in
+  - top=1in
+  - bottom=1in
+header-includes:
+  - \usepackage{setspace}
+  - \doublespacing
+  - \usepackage{float}
+  - \floatplacement{figure}{t}
+  - \floatplacement{table}{t}
+  - \usepackage{flafter}
+  - \usepackage[section]{placeins}
+  - \usepackage{graphicx}
+  - \usepackage{pdflscape}
+---
+
+```{r setup, include=FALSE}
+# Here you customize global options for how
+# code will translate into the PDF
+# It won't show in the document
+library(knitr)
+opts_chunk$set(echo = FALSE, 
+               message = FALSE, 
+               warning = FALSE, 
+               results = "asis", 
+               out.width = "100%")
+
+# Load additional R packages here
+library(tidyverse) # Data manipulation
+library(tinytable) # tables
+library(haven)
+library(modelsummary)
+library(fixest)
+```
+
+
+\newpage
+
+\setlength{\parindent}{2em}
+
+# Introduction
+
+```{r}
+mass_trials <- read_dta("Data/MassTrials.dta")
+```
+
+```{r}
+supportdem <- read_dta("Data/SupportDem.dta")
+```
+
+A central debate in transitional justice concerns whether prosecuting former authoritarian elites stabilizes new democracies by signaling a break with the past or instead risks alienating citizens aligned with the prior regime. While most studies examine macro-level outcomes, @padilla2025satisfaction shifts attention to mass attitudes, arguing that transitional justice (TJ) trials can enhance democratic legitimacy by increasing satisfaction with democracy (SWD) among the “winners” of the transition without provoking backlash among its “losers.” Using cross-national data, individual-level surveys from eight Latin American countries, and subnational evidence from Argentina, the study finds that trials are positively associated with SWD among left-leaning citizens and not associated with increased dissatisfaction among former regime supporters who nevertheless endorse democratic principles.
+
+In this replication, I reconstruct the country-year and individual-level models using corrected coding for eight Latin American cases and assess the stability of Padilla’s core empirical pattern, i.e., higher SWD among left-leaning citizens in years with trials, through several extensions. These include substituting support for democracy for SWD, testing whether amnesties or truth commissions coincide with changes in the trial–attitude relationship, examining trust in courts, the military, and political parties, and running leave-one-out country checks.
+
+Across these analyses, the main association reported in the original article persists: trials remain positively linked to SWD among left-leaning citizens, and this pattern is stable across measurement choices, institutional contexts, and sample composition. However, the relationship weakens or changes direction when support for democracy is used as the outcome, suggesting that the effects identified in the original study pertain chiefly to evaluations of democratic performance rather than to deeper regime commitments.
+
+# Background, Data, and Research Design
+
+The original study examines whether TJ trials are associated with higher SWD. Padilla argues that trials send a stabilizing signal that new democratic authorities have broken with the authoritarian past, while an alternative view holds that trials may trigger backlash among former regime supporters. His research design directly adjudicates between these interpretations.
+
+The article uses a multi-method strategy combining: (1) cross-national country-year data, (2) individual-level surveys, and (3) a quasi-experimental case study of Argentina. In the country-year analysis, Padilla links data on trials, amnesties, and truth commissions (@kitagawa2022logic 2022) to SWD measures (@claassen2020does 2020) and estimates two-way fixed-effects models. Trials are positively associated with national SWD, whereas amnesties are negatively associated, suggesting that different TJ measures convey distinct political signals.
+
+The individual-level analysis tests who responds to trials. Using Latinobarómetro data (1995–2015) from eight countries (Argentina, Bolivia, Brazil, Chile, Ecuador, Paraguay, Peru, and Uruguay), Padilla interacts trial timing with respondents’ ideology and support for democracy. Increases in SWD occur primarily among ideological “winners,” with little evidence of backlash among “losers” except those lacking democratic commitments. This supports the interpretation of trials as affirmations of democratic legality rather than partisan punishment.
+
+To strengthen causal inference, the author exploits Argentina’s staggered regional verdicts (2007–2013) in a difference-in-differences design. These rulings generate localized increases in SWD, helping address endogeneity concerns present in cross-national correlations. A mechanism test using the prosecution of Abimael Guzmán in Peru suggests that effects are not driven by partisan bias but by rule-of-law signaling.
+
+In this project, I replicate the cross-national and individual-level components, reproducing the author’s models using his original Stata files. I then extend the analysis by correcting coding for the eight Latin American cases, applying explicit clustering strategies, and assessing whether trials correlate with trust in specific political institutions. These additions help evaluate the robustness and scope of Padilla’s core claims.
+
+# Replication
+
+To establish a reliable baseline for extension, I first replicate the article’s two core quantitative components: the cross-national country-year models (Table 1) and the individual-level Latin American models (Table 2). These tables contain the main empirical evidence for the claim that trials are associated with higher satisfaction with democracy, so reproducing them is a necessary step before evaluating coding decisions or testing alternative specifications.
+
+Replicating these components serves three purposes: (1) it verifies that the published results can be recovered from the author’s data and code; (2) it confirms that the data preparation, sample restrictions, and modeling choices in the shared files match the procedures described in the article; and (3) it provides a clean benchmark for identifying whether later discrepancies arise from substantive coding differences or technical adjustments.
+
+For Table 1, I use `Supportdem.dta` as provided, apply the author’s sample restrictions, and re-estimate the sequence of fixed-effects models shown in the article—from trials only, to year fixed effects, to the inclusion of amnesties, truth commissions, and the full set of economic, political, and repression controls, along with the balanced-panel specification for 1999–2012.
+
+```{r}
+knitr::include_graphics("Table 1 replicated.png")
+```
+
+My reproduced estimates closely match those in the original Table 1, with only minor numerical differences arising from technical rather than substantive sources. Stata’s `xtreg, fe` and R’s `feols` implement fixed effects and handle missing values slightly differently, especially in year–FE expansion and sample construction, which produces small shifts in point estimates and standard errors. These discrepancies are mechanically driven, and the substantive pattern of results remains identical.
+
+For Table 2, I use `MassTrials.dta` as provided, apply the author’s country restrictions, and recreate his recoding of ideology, education, trust, economic perceptions, and vote choice. I then estimate the same sequence of heterogeneous-effects models, progressively adding fixed effects and controls. Because the dataset omits the party-in-power variable used in the original, I reproduce the structure of the specification while excluding this regressor where necessary. All models follow the same listwise deletion logic used in the original study.
+
+```{r}
+knitr::include_graphics("Table 2 replicated.png")
+```
+
+My replication of Table 2 produces coefficients that closely match the original results, with only minor differences traceable to coding and data-handling issues, most notably the absence of the “party in power” variable used in two of the author’s specifications. Consequently, my corresponding models exclude this regressor, producing small shifts in estimates and sample sizes. Despite these mechanical discrepancies, the direction, magnitude, and significance of the key coefficients remain unchanged, confirming that the substantive patterns align with the original analysis.
+
+# Extension/Discussion
+
+## Recoding the original country-year dataset
+
+After reproducing the original analyses, I extend the study by revisiting the coding of TJ treatments in the country-year dataset. This step is necessary because several cases in the replication files contain timing discrepancies relative to well-documented TJ events, and the original framework treats trials, amnesties, and truth commissions as signals whose effects depend precisely on when they occur. Since treatment timing structures the fixed-effects identification, miscoding can bias estimates or obscure meaningful cross-national variation.
+
+I retain Padilla’s theoretical assumptions and coding logic but correct specific omissions and inconsistencies, for example, recoding Brazil’s 1979 Amnesty Law to apply to all democratic years (given its continued legal force), adding Brazil’s 2012–14 truth commission, and restoring major TJ events in Argentina, Bolivia, Chile, Paraguay, and Uruguay that were missing or misaligned in the dataset. These adjustments modify only the TJ variables and leave all other components of the dataset and modeling strategy unchanged.
+
+The corrected coding better reflects established TJ timelines, improves comparability across countries, and ensures that the extended analyses assess TJ signals as the theory intends.
+
+## Re-creating Tables 1 and 2 after adjustments in coding for the eight Latin American Countries
+
+After correcting the coding of TJ variables in the country-year dataset, I re-estimate the article’s first two tables using only the eight Latin American cases that form the basis of the individual-level analysis. This serves two purposes: (1) it assesses whether the trial–SWD correlations reported in the full cross-national sample persist once treatment timing matches each country’s historical TJ trajectory, and (2) it evaluates the internal consistency between the macro- and micro-level analyses, which theoretically rely on the same treatment definition.
+
+```{r}
+knitr::include_graphics("Table 1 after correction of code.png")
+```
+
+Using the original Table 1 specifications but restricting the sample to the eight countries and applying the corrected coding, the country-year estimates differ sharply from the published results. While trials are positively and significantly associated with SWD in the full cross-national sample, this pattern weakens in the regional subset: the trial coefficient is larger in the simplest model (0.56 vs. 0.31) but becomes smaller and statistically insignificant once year fixed effects and controls are added. The coefficients on amnesties and truth commissions also lose precision and frequently change sign. These discrepancies reflect the much smaller sample (157 vs. 1,024 observations) and limited within-country variation in TJ events, both of which reduce statistical power and make estimates sensitive to specification.
+
+I then reconstruct Table 2 using the corrected treatment timing from the country-year dataset merged into the individual-level file. Because the interaction between trials and ideology in the original analysis depends entirely on whether individuals are correctly classified as being surveyed before or after a trial year, updating the treatment coding is essential for restoring construct validity at the micro level.
+
+```{r}
+knitr::include_graphics("Table 2 after correction of code.png")
+```
+
+I then reconstruct Table 2 using the corrected treatment timing merged into the individual-level file, ensuring that respondents are accurately classified as surveyed before or after trial years. Across all specifications, the Trial × Left interaction remains positive and statistically significant, though attenuated in magnitude (~0.19 → ~0.06, compared to ~0.23 → ~0.08 in the original). The main effect of trials becomes insignificant, which is expected given the smaller N and reduced variation, and clustered standard errors further widen confidence intervals.
+
+Overall, the analysis reproduces the article’s central descriptive pattern, i.e., higher SWD among left-leaning citizens in years with trials, while showing greater uncertainty due to data limitations, corrected coding, and clustering adjustments.
+
+## Re-estimating the main models using "support for democracy" as the dependent variable
+
+To assess whether the trial–attitude relationship depends on how democratic support is measured, I re-estimate the country-year models using support for democracy instead of SWD. This tests both outcome differentiation—since support for democracy is a more abstract, regime-level commitment that Padilla treats as less sensitive to short-term institutional signals—and measurement robustness, clarifying whether the associations observed for SWD reflect deeper regime attachment or performance-based evaluations. Because coding corrections are available only for the eight Latin American cases, I restrict the analysis to this same subset and rely on complete-case estimation, avoiding imputation given that missingness reflects structural data gaps rather than survey non-response.
+
+```{r}
+knitr::include_graphics("Table 1 support for democracy.png")
+```
+
+The resulting table, parallel to the replicated SWD models, shows markedly different patterns. Whereas trials correlate positively with SWD across all specifications in the original analysis, their association with support for democracy is negative in every model and statistically significant in most. The coefficients for amnesties and truth commissions also reverse: amnesties become weakly positive in two models (significant in one specification), while truth commissions yield the largest negative and consistently significant correlations. Taken together, these differences suggest that the article’s descriptive patterns primarily reflect evaluations of democratic performance, which appear more responsive to transitional justice signals, while principled democratic support is largely unrelated, or inversely related, to the presence of TJ mechanisms in these countries.
+
+```{r}
+knitr::include_graphics("Table 2 support for democracy.png")
+```
+
+When using SWD as the outcome (original Table 2), trials correlate with higher satisfaction among left-leaning respondents in the eight LatAm countries, as reflected in positive and highly significant Trial × Left coefficients (≈ 0.23 → 0.08 across models). The left interacts strongly with trial exposure to increase SWD, even though the main effect of trials becomes negative once fixed effects are added.
+
+When the outcome is support for democracy (new table), the direction of the interaction does not change: Trial × Left remains positive and significant in all specifications, indicating that left-leaning citizens consistently express more democratic support when trials occur. However, the magnitude is smaller (≈ 0.10 → 0.04), which suggests a weaker relationship.
+
+## Using trust in courts, the military, and political parties as dependent variables
+
+To assess whether the relationship between trials and SWD reflects a targeted response or a broader shift in institutional confidence, I extend Padilla’s Argentina-only institutional trust analysis (Table 14) to all eight Latin American countries. Using trust in the judiciary, armed forces, and political parties as dependent variables, I re-estimate the same specification used in the individual-level models, replacing regional fixed effects with country fixed effects. This serves as a discriminant validity test: if trials merely generate diffuse optimism, institutional confidence should rise across the board; if trials instead signal a renewed democratic commitment, effects should appear primarily on regime-level attitudes rather than evaluations of specific state actors.
+
+```{r}
+knitr::include_graphics("Trust in institutions.png")
+```
+
+Across the eight countries, trials do not produce a uniform increase in institutional trust. They correlate with slightly higher average trust in courts and the military, but only the latter reaches statistical significance. The Trial × Left interactions vary in direction and size: left-leaning respondents show no significant change in trust in the courts, significantly lower trust in the military, and significantly higher trust in political parties when trials occur. Because these correlations are small, inconsistent across institutions, and far weaker than those observed for SWD, the overall pattern supports the interpretation that trials primarily correlate with regime-level evaluations, not with generalized increases in trust in state actors.
+
+## Interaction models with amnesty and truth commissions
+
+Because transitional justice mechanisms rarely operate in isolation, I extend the author’s specification by testing whether amnesties or truth commissions are associated with changes in the trial–SWD relationship. In the original study, these variables enter only as additive controls, which captures their average correlations but does not assess whether the presence of other TJ measures corresponds to shifts in the trial coefficient. Yet the article’s theoretical discussion suggests such possibilities, as, for instance, amnesties may blunt the accountability signal of trials (p. 11).
+
+```{r}
+knitr::include_graphics("Interaction terms.png")
+```
+
+To explore this, I estimate models allowing the association between trials and SWD to vary across institutional contexts, and also re-estimate the main specification separately in years with and without amnesties and truth commissions. Across all six specifications, there is no evidence that either mechanism meaningfully conditions the trial–SWD relationship. The interaction terms are small, imprecisely estimated, and never significant, and the stratified models produce trial coefficients that are modest and statistically indistinguishable across institutional contexts. Overall, these results suggest that the trial–SWD correlation does not systematically vary across different transitional justice environments, and neither amnesties nor truth commissions appear to reinforce or weaken the patterns observed in the baseline models.
+
+## Leave-one-Out Robustness Test
+
+To assess whether the estimated association between transitional justice trials and democratic satisfaction is driven by any single country, I conduct a leave-one-out robustness analysis. For each of the eight Latin American cases, I re-estimate the full specification after excluding that country from the sample. This jackknife procedure provides a transparent test of result stability under minimal changes to sample composition.
+
+Because the models rely on listwise deletion, the number of complete country-years varies slightly across iterations (117–118 observations). This variation simply reflects the differing contributions each country makes to the balanced dataset used in the full specification.
+
+Overall, this diagnostic offers a straightforward but informative robustness check, complementing the earlier adjustments to coding and model specification without introducing additional identifying assumptions.
+
+```{r}
+knitr::include_graphics("Leave-One-Out.png")
+```
+
+In this test, when each country is removed in turn, the estimated trial coefficient stays small and statistically indistinguishable from zero in seven of the eight replications (ranging roughly from −0.02 to 0.14). Only when Paraguay is excluded does the coefficient become relatively large and statistically significant (≈0.46, p<0.05), suggesting that Paraguay pulls the overall association downward rather than a single country inflating it upward.
+
+Finally, several clarifications about estimation choices and unimplemented extensions help delineate the scope of the replication.
+
+## Clustering strategy
+
+I cluster standard errors in all extension models to avoid overconfident inferences due to correlated errors. In the country-year regressions, clustering at the country level is appropriate because both treatment and many unobserved shocks vary at that level and may generate serial correlation over time, consistent with best practices in panel settings. In the individual-level analyses, treatment varies by country-year, and all respondents surveyed in the same country-year share the same institutional environment. I therefore cluster at the country-year level, allowing arbitrary within-cluster dependence.
+
+## Event-study diagnostics
+
+An event-study design, adding placebo leads of trials and plotting dynamic coefficients, would help explore pre-treatment trends. While valuable, this extension requires additional exposition and graphical presentation. Given the 3,000-word limit, I prioritize documenting the coding corrections, reproducing the central models, and implementing targeted robustness checks (alternative outcomes, institutional trust, TJ-interaction models, and leave-one-out tests). A full dynamic analysis is therefore left for future work.
+
+## Alternative outcome construction
+
+Another useful extension would be to re-estimate the country-year models using raw survey-based averages of democratic satisfaction (e.g., Latinobarómetro) instead of Claassen’s latent index. This would help determine whether the cross-national results depend on the measurement model underlying the macro-level outcome. Implementing this alternative, however, requires extensive harmonization of micro-data across countries and years, which exceeds the time and space constraints of this assignment. Therefore, this also remains a direction for subsequent research.
+
+## Limitations
+
+As with any replication, several limitations remain. Restricting the analysis to eight Latin American cases improves internal validity for the specific historical corrections I document, but it also narrows external validity relative to the original cross-national design. Besides, although I correct coding inconsistencies, the replication still relies on the structure of the author's datasets, and additional unobserved missclassifications may persist.
+
+The estimates also remain model-dependent: the TWFE framework assumes parallel trends and homogeneous treatment effects, and while I cluster appropriately and conduct targeted robustness checks, a fuller examination, such as event-study diagnostics, heterogeneous-effects estimators, and raw survey-based outcome construction, exceeds the scope of this assignment. Listwise deletion and the small number of treated country-years may also reduce statistical power and limit causal interpretation even more.
+
+Nevertheless, these limitations do not undermine the replication's main contribution, which is clarifying coding issues and assessing the robustness of the original findings, but they point toward important avenues for future work using more flexible estimators, alternative outcome measures, and dynamic designs.
+
+# Conclusion
+
+This replication reproduces Padilla’s core models, corrects TJ coding for eight Latin American countries, and extends the analysis through alternative outcomes, institutional-trust tests, TJ-interaction models, and leave-one-out diagnostics. Across these exercises, the main pattern holds: trials correlate with higher satisfaction with democracy among left-leaning respondents, though effects are smaller and less precise in the corrected regional sample. Evidence for broader institutional or regime-level responses is limited. The results show how sensitive TJ findings are to coding decisions, outcome measures, and sample structure. For the field, this highlights the need for transparent data construction and rigorous robustness checks, especially when theories hinge on the timing of institutional events.
+
+# Supplementary Material
+
+The data, code, and any additional materials required to replicate all analyses in this article are available at <https://github.com/nataliacspimenta/ps403-replication-paper>.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

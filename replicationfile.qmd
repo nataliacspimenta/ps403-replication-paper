@@ -1,0 +1,1412 @@
+---
+title: "Replication File - Code and Explanations"
+author: 
+  - Natália Pimenta
+  - <ncspimenta@u.northwestern.edu>
+date: December 10, 2025
+date-format: "**[D]ue:** MMMM D, YYYY"
+format: 
+     pdf:
+       documentclass: article
+fontsize: 12pt
+urlcolor: blue
+number-sections: true
+geometry:
+      - left=1in
+      - right=1in
+      - top=1in
+      - bottom=1in
+header-includes:
+    - \usepackage{setspace}
+    - \doublespacing
+---
+
+# Loading data into R
+
+## Loading important packages
+
+```{r}
+library(tidyverse)
+library(haven)
+library(modelsummary)
+library(fixest)
+```
+
+## Loading the .dta files sent by the author
+
+### MassTrials.dta
+
+The following file is an individual-level survey dataset comprising 370,540 observations drawn from public opinion surveys conducted between 1995 and 2015 across nineteen Latin American and Iberian countries. Each row corresponds to a survey respondent and is identified by country, year, and survey-specific identifiers.
+
+Substantively, the dataset contains core attitudinal measures related to democracy, including satisfaction with democracy (`satdem4`) and support for democracy (`demsup`, `demsup2` \[recoded\]). It also records respondents' ideological self-placement (`ideology`) and perceptions of national and personal economic conditions (`econcon`, `econper`).
+
+A detailed set of institutional trust indicators is included, covering trust in congress, the judiciary, the church, the police, the military, and political parties (`trustcon`, `trustjud`, `trustchurch`, `trustpolice`, `trustmilitary`, `trustpolpar`). Basic demographic variables such as age, gender, and education are also present.
+
+Together, these variables allow the construction of country-year aggregates used in the cross-national and individual Argentine analyses, while the survey metadata support consistent merging and harmonization across countries and time.
+
+```{r}
+mass_trials <- read_dta("Data/MassTrials.dta")
+```
+
+P.S.: In lab5, I initially loaded "ArgentinaRegional.dta" into R, but I later discovered that it is in fact identical to MassTrials.dta. Since both contain the same 370,540 individual-level survey responses and the same set of variables, the difference between the two does not lie in the datasets themselves, but rather in how the author's Stata code subsequently transforms them. In the replication files, the author uses one copy ("ArgentinaRegional.dta") to construct an Argentina-only dataset (by restricting the sample to respondentsfor whom country == 32), and the other ("MassTrials.dta") to construct the cross-national dataset used in the comparative analysis. Although the published article focuses on a subset of eight Latin American countries, i.e., Argentina (32), Chile (152), Brazil (76), Uruguay (858), Ecuador (218), Paraguay (600), Peru (604), and Bolivia (68), the raw "MassTrials.dta" file loaded here includes survey data from nineteen Latin American and Iberian countries, consistent with the broader sampling frame of the original surveys.
+
+### Supportdem.dta
+
+The following file is a country-year panel dataset consisting of 8,864 observations for 188 countries observed between 1970 and 2021. Each row corresponds to specific country-year and includes a broad set of institutional, macroeconomic, and human rights indicators, along with aggregate measures of mass democratic attitudes.
+
+The dataset contains variables identifying country and year, regional classifications, and a large number of democratic indices and related components, such as measures of liberal democracy, poliarchy, and regime type. It also includes macroeconomic and structural controls, such as GDP per capita, inflation, population, and conflict-related indicators.
+
+A key set of variables captures transitional justice aspects (e.g. `trial`, `amnesty`, and `truthco`) and their onset years, as well as binary treatment variables. Additional variables record levels of state repression and corruption, along with aggregate measures of mass attitudes toward democracy derived from survey data, such as satisfaction with democracy and support for democracy, which are merged at the country-year level.
+
+This structure makes "Supportdem.dta" suitable for panel analyses, including fixed-effects regressions, multi-period difference-in-differences, and event-study designs, as implemented in the accompanying Stata code sent by the author.
+
+```{r}
+supportdem <-read_dta("Data/Supportdem.dta")
+```
+
+#### Reproducing the original main results
+
+Before conducting important modifications on coding and extending the article's analysis, I re-run its main tables without any recoding and on the full sample.
+
+Table 1:
+
+```{r}
+support_raw <- read_dta("Data/Supportdem.dta")
+
+t1_data <- support_raw %>%
+  filter(trancou == 1, yeartra > 0)
+
+t1_m1 <- feols(
+  satisdem ~ treattrial | idenpa,         # country FE only
+  data = t1_data,
+  vcov = "iid"
+)
+
+t1_m2 <- feols(
+  satisdem ~ treattrial | idenpa + year,  # country + year FE
+  data = t1_data,
+  vcov = "iid"
+)
+
+t1_m3 <- feols(
+  satisdem ~ treattrial + treatamnesty + treattruthco | idenpa + year, # adds TJ controls
+  data = t1_data,
+  vcov = "iid"
+)
+
+t1_m4 <- feols(
+  satisdem ~ treattrial + treatamnesty + treattruthco + # adds all controls
+    inflation + gdpca + libdem + changede +
+    kill + disap + v2x_partip + v2xnp_regcorr |
+    idenpa + year,
+  data = t1_data,
+  vcov = "iid"
+)
+
+# computes nonmissing1to7 for years 1999–2012, like in the Stata code
+nonmissing_bal <- t1_data %>%
+  filter(year %in% 1999:2012) %>%
+  group_by(idenpa) %>%
+  summarise(
+    nonmissing1to7 = sum(!is.na(satisdem)),
+    .groups = "drop"
+  ) %>%
+  filter(nonmissing1to7 %in% 12:14)
+
+t1_balanced <- t1_data %>%
+  filter(year %in% 1999:2012) %>%
+  semi_join(nonmissing_bal, by = "idenpa")
+
+t1_m5 <- feols(
+  satisdem ~ treattrial + treatamnesty + treattruthco +
+    inflation + libdem + gdpca + v2x_partip + kill + disap |
+    idenpa + year,
+  data = t1_balanced,
+  vcov = "iid"
+)
+```
+
+Creating the table
+
+```{r}
+t1_models <- list(
+  "(1) Country FE"            = t1_m1,
+  "(2) Country + Year FE"               = t1_m2,
+  "(3) TJ Controls"    = t1_m3,
+  "(4) Full Controls"              = t1_m4,
+  "(5) Trials After Dem"   = t1_m5
+)
+
+# Only show these coefficients
+t1_coef_map <- c(
+  "treattrial"    = "Trial",
+  "treatamnesty"  = "Amnesty",
+  "treattruthco"  = "Truth Commission"
+)
+
+# Only report Within R2 and N
+t1_gof_map <- tibble::tribble(
+  ~raw,         ~clean,             ~fmt,
+  "r2_within",  "Within R-squared", 3,
+  "nobs",       "N",                0
+)
+
+# Rows indicating which types of controls are in each model
+t1_control_rows <- tibble::tribble(
+  ~term,                 ~`(1) FE: Trials Only`, ~`(2) FE + Year FE`, ~`(3) + Amnesty & Truth Comm.`, ~`(4) Full Controls`, ~`(5) Balanced Panel 1999–2012`,
+  "Country Fixed-Effects",   "✓",                 "✓",                 "✓",                            "✓",                  "✓",
+  "Year Fixed-Effects",      "",                  "✓",                 "✓",                            "✓",                  "✓",
+  "Economic Controls",       "",                  "",                  "",                             "✓",                  "✓",
+  "Political Controls",      "",                  "",                  "",                             "✓",                  "✓",
+  "Repression Controls",     "",                  "",                  "",                             "✓",                  "✓"
+)
+
+modelsummary(
+  t1_models,
+  coef_map  = t1_coef_map,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars     = c("*" = .1, "**" = .05, "***" = .01),
+  gof_map   = t1_gof_map,
+  add_rows  = t1_control_rows,
+  coef_omit = "Intercept|sigma",
+  title     = "Trials and Satisfaction with Democracy (Country-Year Panel) (Table 1 replicated)",
+  notes     = c("* p<0.1, ** p<0.05, *** p<0.01")
+)
+```
+
+Table 2:
+
+```{r}
+mass_raw <- read_dta("Data/MassTrials.dta")
+```
+
+```{r}
+mass_raw <- mass_raw %>%
+
+  mutate(countryear = country * 10000 + year)
+
+
+latam_codes <- c(32, 68, 152, 76, 218, 600, 604, 858)
+mass_raw <- mass_raw %>%
+  filter(country %in% c(32, 68, 152, 76, 218, 600, 604, 858))
+
+mass_raw <- mass_raw %>%
+  mutate(
+    treat = 0L,
+    treat = if_else(
+      (country == 32 & year > 2006) |  # Argentina
+        (country == 858 & year > 2004) |  # Uruguay
+        (country == 604 & year > 2004),   # Peru
+      1L,
+      treat
+    )
+  )
+
+# recodes ideology:
+
+mass_raw <- mass_raw %>%
+  mutate(
+    ideology = if_else(ideology %in% c(-8, -6), NA_real_, ideology),
+    right    = if_else(!is.na(ideology) & ideology > 5, 1L, 0L),
+    left     = if_else(!is.na(ideology) & ideology < 5, 1L, 0L),
+    left     = if_else(!is.na(ideology) & ideology > 4, 0L, left),  # match "replace left=0 if ideology>4"
+    centrist = if_else(!is.na(ideology) & ideology == 5, 1L, 0L)
+  )
+
+# recodes education:
+
+mass_raw <- mass_raw %>%
+  mutate(
+    educ = if_else(educ == -5, NA_real_, educ)
+  )
+
+# he also recodes party in power, but the file he sent me doesn't have this variable :(
+
+# recodes trust and economic variables:
+
+recode_trust <- function(x) {
+  case_when(
+    x == 1 ~ 4,
+    x == 2 ~ 3,
+    x == 3 ~ 2,
+    x == 4 ~ 1,
+    TRUE   ~ x
+  )
+}
+
+recode_econ <- function(x) {
+  case_when(
+    x == 1 ~ 5,
+    x == 2 ~ 4,
+    x == 4 ~ 2,
+    x == 5 ~ 1,
+    TRUE   ~ x
+  )
+}
+
+mass_raw <- mass_raw %>%
+  mutate(
+    trustcon      = recode_trust(trustcon),
+    trustjud      = recode_trust(trustjud),
+    trustchurch   = recode_trust(trustchurch),
+    trustpolice   = recode_trust(trustpolice),
+    trustmilitary = recode_trust(trustmilitary),
+    trustpolpar   = recode_trust(trustpolpar),
+    econcon       = recode_econ(econcon),
+    econper       = recode_econ(econper)
+  )
+
+# recodes vote:
+
+mass_raw <- mass_raw %>%
+  mutate(
+    vote = if_else(vote >= -7 & vote <= 0, NA_real_, vote)
+  )
+```
+
+Building the models:
+
+```{r}
+# Stata does listwise deletion inside each regression;
+# feols will do the same automatically.
+
+t2_m1 <- feols(
+  satdem4 ~ treat * left,
+  data = mass_raw
+)
+
+t2_m2 <- feols(
+  satdem4 ~ treat * left | country + year,
+  data = mass_raw
+)
+
+t2_m3 <- feols(
+  satdem4 ~ treat * left + age + female + educ + i(vote) |
+    country + year,
+  data = mass_raw
+)
+
+t2_m4 <- feols(
+  satdem4 ~ treat * left + age + female + educ | # no party in
+    # power included, because the data that the author sent me
+    # does not have this variable
+    country + year,
+  data = mass_raw
+)
+
+t2_m5 <- feols(
+  satdem4 ~ treat * left + age + female + educ +
+    trustjud + trustmilitary + trustpolpar |
+    country + year,
+  data = mass_raw
+)
+
+t2_m6 <- feols(
+  satdem4 ~ treat * left + age + female + educ +
+    econcon + econper |
+    country + year,
+  data = mass_raw
+)
+
+t2_m7 <- feols(
+  satdem4 ~ treat * left + age + female + educ +
+    i(vote) + # I couldn't include the party in power in this
+    # one, because the data that the author sent me does not
+    # contain this information
+    trustjud + trustmilitary + trustpolpar +
+    econcon + econper |
+    country + year,
+  data = mass_raw
+)
+```
+
+Creating the regression table:
+
+```{r}
+
+t2_models <- list(
+  "(1)" = t2_m1,
+  "(2)" = t2_m2,
+  "(3)" = t2_m3,
+  "(4)" = t2_m4,
+  "(5)" = t2_m5,
+  "(6)" = t2_m6,
+  "(7)" = t2_m7
+)
+
+t2_coef_map <- c(
+  "treat"          = "Trial",
+  "left"           = "Left",
+  "treat:left"     = "Trial × Left"
+)
+
+t2_control_rows <- tribble(
+  ~term,                   ~`(1)`, ~`(2)`, ~`(3)`, ~`(4)`, ~`(5)`, ~`(6)`, ~`(7)`,
+  "Country Fixed-Effects",      "",   "✓",   "✓",   "✓",   "✓",   "✓",   "✓",
+  "Year Fixed-Effects",         "",   "✓",   "✓",   "✓",   "✓",   "✓",   "✓",
+  "Socio-Demographics",         "",   "",    "✓",   "✓",   "✓",   "✓",   "✓",
+  "Vote (partisanship)",        "",   "",    "✓",   "",    "",    "",    "✓",
+  "Governing Party Aligned",    "",   "",    "",    "",    "",    "",    "",   # not available
+  "Economic Perceptions",       "",   "",    "",    "",    "",    "✓",   "✓",
+  "Trust Political Institutions","",   "",    "",    "",    "✓",   "",    "✓"
+)
+
+t2_gof_map <- tribble(
+  ~raw,        ~clean,      ~fmt,
+  "r.squared", "R-squared", 3,
+  "nobs",      "N",         0
+)
+
+modelsummary(
+  t2_models,
+  coef_map  = t2_coef_map,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars     = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  coef_omit = "Intercept|sigma",
+  gof_map   = t2_gof_map,
+  add_rows  = t2_control_rows,
+  title     = "Results of the interaction of trials and ideology in satisfaction with democracy (Table 2 replicated)",
+  notes     = c("* p<0.1, ** p<0.05, *** p<0.01")
+)
+```
+
+#### Important modifications in dataframes
+
+In the Brazilian case, there are two clear discrepancies between the historical record and the coding of transitional justice variables in the dataset.
+
+First, Brazil adopted an Amnesty Law in 1979 that remains in effect, but the variable `treatamnesty`, used by the author as a control for amnesty measures, remains coded as 0 for Brazil, failing to register the existence of this policy.
+
+I think the data looks like this because Kitagawa and Bell (2022), whose data the original article adopts, code only post-transition amnesties as transitional justice mechanisms. Under this rule, Brazil’s 1979 Amnesty Law appropriately appears as 0, since it predates democratization. This coding choice is conceptually coherent within their framework, which restricts transitional justice to measures introduced after the democratic break.
+
+However, despite its timing, Brazil's amnesty law exerted binding legal effects well into the democratic period (and still does), preventing prosecutions for dictatorship-era abuses and shaping Brazil's entire transitional justice trajectory. Substantively, it performed the same function as the post-transition amnesties observed in other countries: it signaled continuity with the authoritarian past and limited the scope of accountability. For this reason, and following the author's own practice of adjusting the coding when necessary, I recode Brazil as having an amnesty from 1979 onward. This modification preserves comparability with the author's theoretical mechanism—opposing “signals” of trials and amnesties, while ensuring that Brazil’s profile accurately reflects the institutional constraints that structured its transitional justice process.
+
+The following code fixes this:
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treatamnesty = if_else(
+      country == "Brazil" & year >= 1979,
+      1L,
+      treatamnesty
+    )
+  )
+```
+
+Second, Brazil's National Truth Commission was officially created in late 2011 and became operational in 2012, yet the variable `treattruthco` is also coded as 0 for Brazil from 2012 onward. Here's how I fixed this:
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattruthco = if_else(
+      country == "Brazil" & year >= 2012,
+      1L,
+      treattruthco
+    )
+  )
+```
+
+In the case of Argentina, the coding of the trial indicator in the country-year dataset does not fully align with the historical trajectory of transitional justice either. In Figure 1 of the article, the author explicitly focuses on trials taking place after 1987 and appropriately highlights the resurgence of prosecutions from 2007 onward. However, in the underlying data, the variable `treattrial` is coded as 0 for 1985, even though this is the year of the landmark *Juicio a las Juntas* against the military leadership of the dictatorship. From the perspective of transitional justice and public accountability, 1985 clearly constitutes a major trial year. To correct this discrepancy and more accurately reflect the presence of criminal prosecutions, I recode `treattrial` to 1 for Argentina in 1985, while preserving the original coding for subsequent years.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattrial = if_else(
+      country == "Argentina" & year == 1985,
+      1L,
+      treattrial
+    )
+  )
+```
+
+A similar issue arises with the coding of amnesty in Argentina. In the original dataset, the variable `treatmentamnesty` is coded as 1 for Argentina from 1990 onward, which effectively treats amnesty as beginning in 1990 and persisting indefinitely. This timeline is difficult to reconcile with the well-established sequence of legal measures that structured impunity in Argentina. The crucial turning points were the Full Stop Law (December 1986), which imposed a strict deadline for initiating new prosecutions, and the Due Obedience Law (June 1987), which granted automatic immunity to lower- and mid-ranking officers. Together, both laws curtailed accountability for dictatorship-era crimes and are widely regarded as the starting point of the amnesty regime.
+
+Subsequent presidential pardons in 1989-1990 deepened this impunity but did not initiate it. Conversely, the amnesty period did not extend indefinitely: in 1998, Congress repealed the laws, in 2003 it annulled their legal effects, and in 2005 the Supreme Court declared them unconstitutional, paving the way for the reopening of human rights trials in the subsequent years.
+
+To bring the dataset in line with this trajectory, I recode `treatamnesty` for Argentina to indicate the core amnesty period only (setting it from 1987 to 2005, and to 0 before and after this window). This correction avoids treating amnesty as permanently in place from 1990 onward and better captures trajectory of impunity in the Argentine case.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treatamnesty = case_when(
+      country == "Argentina" & year >= 1987 & year <= 2005 ~ 1L,
+      country == "Argentina" & (year < 1987 | year > 2005) ~ 0L,
+      TRUE ~ treatamnesty
+    )
+  )
+```
+
+In the Bolivian case, the original coding of truth commission activity in the country-year dataset does not register the existence of the National Commission of Inquiry into Disappearances, even though this was the first truth commission established in Latin America.
+
+The commission was created in October 1982 by President Hernán Siles Zuazo with a mandate to investigate disappearances that occurred between 1967 and 1982, and it remained active until it was effectively abandoned in 1984 due to limited resources and political support, with no cases being conclusively investigated. However, in the dataset, the variable `treattruthco`, used as a transitional justice control by the author, is coded as 0 for Bolivia throughout this period. To align the data with this historical record, I recode `treattruthco` to indicate the presence of this brief truth commission in Bolivia between 1982 and 1984, while leaving the original coding for other years and countries unchanged.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattruthco = case_when(
+      country == "Bolivia" & year >= 1982 & year <= 1984 ~ 1L,
+      TRUE ~ treattruthco
+    )
+  )
+```
+
+A similar correction is required for the coding of criminal prosecutions in Bolivia. Following the collapse of successive military regimes, the country initiated the so-called Trial of Responsibility beginning in 1984, in which former dictator Luis García Meza Tejada and dozens of his associates were prosecuted for human rights violations and other crimes committed under the dictatorship. These proceedings extended into the early 1990s and resulted in convictions for a large number of former officials.
+
+Yet in the country-year dataset, the variable `treattrial` is coded as 0 for Bolivia, failing to capture the existence of these landmark prosecutions. To more accurately reflect the onset of transitional justice trials, I recode `treattrial` to 1 for Bolivia in 1984 (the year in which the Trials of Responsibility began), following the author's convention of coding trials in the year when criminal proceedings are initiated.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattrial = case_when(
+      country == "Bolivia" & year == 1984 ~ 1L,
+      TRUE ~ treattrial
+    )
+  )
+```
+
+In the Chilean case, a minor change also has to be made. Historicals accounts indicate that, after the democratic transition in 1990, Chile gradually moved from a focus on truth and reparations toward criminal accountability, with the first landmark convictions of former regime officials occurring in 1993, when high-ranking officers such as Manuel Contreras and Pedro Espinoza were sentenced for dictatorship-era human rights crimes.
+
+Yet in the dataset, the variable `treattrial` is coded as 0 for the country in 1993, despite this clear judicial milestone. To align the data with the widely recognized beginning of Chile's post-transition human rights prosecutions, I recode `treattrial` to 1 for Chile in 1993.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattrial = if_else(
+      country == "Chile" & year == 1993,
+      1L,
+      treattrial
+    )
+  )
+```
+
+A similar minor adjustment is required for the coding of truth commissions in Chile. The country's first national truth commission, the National Commission for Truth and Reconciliation (Rettig Commission), was established in April 1990 and operated until it delivered its final report in early 1991.
+
+Nevertheless, in the country-year dataset, the variable `treattruthco` is coded as 0 for Chile in 1990, failing to register the existence of the commission in the year it was created and began to function. To correct this discrepancy, I recode `treattruthco` to 1 for Chile in 1990, thereby ensuring that the dataset accurately reflects the timing of Chile's first truth commission and bringing the treatment coding in line with the historical trajectory of transitional justice in the country.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattruthco = if_else(
+      country == "Chile" & year == 1990,
+      1L,
+      treattruthco
+    )
+  )
+```
+
+In the Paraguayan case, the original country–year coding does not register the existence of the Truth and Justice Commission (Comisión de Verdad y Justicia, CVJ), even though it clearly fits the definition of a transitional justice institution adopted in the article. Established in 2004 to investigate human rights abuses committed under the dictatorship of Alfredo Stroessner (1954–1989), the CVJ operated until 2008, documenting widespread violations such as illegal detention, torture, and extrajudicial killings and issuing a final public report with recommendations for reparations, justice, and institutional reform. Nevertheless, the variable `treattruthco` is coded as 0 for Paraguay throughout this period. To align the dataset with the historical record and maintain consistency with the treatment coding used in other cases, I recode `treattruthco` to 1 for Paraguay from 2004 onward.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattruthco = case_when(
+      country == "Paraguay" & year >= 2004 ~ 1L,
+      TRUE ~ treattruthco
+    )
+  )
+```
+
+A similar adjustment is necessary for the coding of transitional justice trials in Paraguay. Evidence compiled by transitional justice research projects, such as TJET, documents several trials in which former officials of the Stroessner dictatorship were prosecuted and convicted, beginning with the trial of Pastor Coronel in 1992. These prosecutions mark the onset of post-authoritarian criminal accountability in Paraguay, yet the country-year dataset codes the variable `treattrial` as 0 for Paraguay in those years. Following the author’s convention of coding the treatment in the year when prosecutions against past regime agents begin, I recode `treattria`l to 1 for Paraguay from 1992 on, thereby recognizing Paraguay as a case with both a truth commission and criminal trials addressing dictatorship-era abuses.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattrial = case_when(
+      country == "Paraguay" & year >= 1992 ~ 1L,
+      TRUE ~ treattrial
+    )
+  )
+```
+
+In the Uruguayan case, the original country-year coding of trials also does not fully reflect their empirical onset. The dataset treats Uruguay as initiating them in 2007, but the TJET data indicates that the prosecutions of former regime officials began earlier. In particular, three landmark cases against members of the security forces for crimes committed under the 1973–1985 authoritarian regime were initiated and advanced in the early 2000s, with the first such prosecutions dating back to 2002. These cases meet the standard definition of transitional justice trials, as they target state agents for grave human rights abuses committed under the prior dictatorship and are conducted under democratic rule. To align the treatment coding with this empirical timeline while preserving the structure of the original design, I recode Uruguay as treated (treattrial = 1) from 2002 onward.
+
+```{r}
+supportdem <- supportdem %>%
+  mutate(
+    treattrial = case_when(
+      country == "Uruguay" & year >= 2002 ~ 1L,
+      TRUE ~ treattrial
+    )
+  )
+```
+
+P.S.: Although Ecuador established truth commissions to investigate human rights violations associated with the Febres Cordero administration (1984-1988), these bodies do not meet the definition of transitional justice employed in the original article. Transitional justice is conceptualized as accountability for abuses committed under authoritarian rule during a regime transition. In contrast, the Ecuadorian commissions responded to abuses that occurred under a democratically elected government and were not linked to a process of democratization or a break with dictatorship. For this reason, and to maintain conceptual and coding consistency across cases, I retain the original coding of `treattruthco` = 0 for all Ecuador years.
+
+P.S. 2: Peru's coding seems fine.
+
+# Testing outcome specificity and measurement robustness
+
+## Re-estimating the main models using "support for democracy" as the dependent variable
+
+Given the number of inconsistencies identified in the coding of transitional justice variables even among the Latin American cases I know more about, I am cautious about relying on the dataset's coding for countries outside this region. Since the original article's main analysis focuses on Latin America, and these countries play a central role in motivating the theoretical expectations, I restrict the replication of the article's first descriptive table to the set of eight cases chosen in the second part of the article only. This decision improves internal validity by ensuring that the descriptive patterns are generated from countries for which I can verify transitional justice events and coding accuracy.
+
+In addition, I re-estimate the article’s main models using support for democracy as the dependent variable for this subset of cases. This aligns the quantitative analyses more closely with the article's theoretical focus on democratic attitudes and allows for a more meaningful comparison between the descriptive results, the corrected transitional justice coding, and the outcomes emphasized in the original discussion. Although the initial study included more countries in the first table, limiting the replication to the subset integral to the author's argument provides a more coherent and substantively grounded assessment while avoiding the propagation of potential coding errors in cases that fall outside the article's empirical core.
+
+```{r}
+latam8 <- c("Argentina", "Bolivia", "Brazil", "Chile", "Ecuador", "Paraguay", "Peru", "Uruguay")
+            
+dflatam8 <- supportdem %>%
+  filter(country %in% latam8,
+         trancou == 1,
+         yeartra > 0)
+
+dfclean <- dflatam8 %>%
+  drop_na(
+    supdem,
+    treattrial,
+    treatamnesty,
+    treattruthco,
+    inflation,
+    gdpca,
+    libdem,
+    changede,
+    kill,
+    disap,
+    v2x_partip,
+    v2xnp_regcorr,
+    country,
+    year
+  )
+
+# (1) Country FE only
+m1 <- feols(
+  supdem ~ treattrial | country,
+  data = dfclean,
+  cluster = ~ country
+)
+
+# (2) Country + Year FE
+m2 <- feols(
+  supdem ~ treattrial | country + year,
+  data = dfclean,
+  cluster = ~ country
+)
+
+# (3) Add TJ controls
+m3 <- feols(
+  supdem ~ treattrial + treatamnesty + treattruthco | country + year,
+  data = dfclean,
+  cluster = ~ country
+)
+
+# (4) Full controls
+m4 <- feols(
+  supdem ~ treattrial + treatamnesty + treattruthco +
+    inflation + gdpca + libdem + changede + kill + disap +
+    v2x_partip + v2xnp_regcorr | country + year,
+  data = dfclean,
+  cluster = ~ country
+)
+
+# (5) Trials After Dem.
+
+bal_nonmissing <- dfclean %>%
+  filter(year %in% 1999:2012) %>%
+  group_by(country) %>%
+  summarise(
+    nonmissing1to7 = sum(!is.na(supdem)),
+    .groups = "drop"
+  ) %>%
+  filter(nonmissing1to7 %in% 12:14)
+
+df_balanced <- dfclean %>%
+  filter(year %in% 1999:2012) %>%
+  semi_join(bal_nonmissing, by = "country")
+
+m5 <- feols(
+  supdem ~ treattrial + treatamnesty + treattruthco +
+    inflation + libdem + gdpca + v2x_partip + kill + disap |
+    country + year,
+  data = df_balanced,
+  cluster = ~ country
+)
+
+
+tz_models <- list(
+  "(1) Country FE"        = m1,
+  "(2) Country + Year FE" = m2,
+  "(3) TJ Controls"       = m3,
+  "(4) Full Controls"     = m4,
+  "(5) Trials After Dem"  = m5
+)
+
+tz_coef_map <- c(
+  "treattrial"   = "Trial",
+  "treatamnesty" = "Amnesty",
+  "treattruthco" = "Truth Commission"
+)
+
+tz_gof_map <- tibble::tribble(
+  ~raw,         ~clean,             ~fmt,
+  "r2_within",  "Within R-squared", 3,
+  "nobs",       "N",                0
+)
+
+tz_control_rows <- tibble::tribble(
+  ~term,                 ~`(1) Country FE`, ~`(2) Country + Year FE`, ~`(3) TJ Controls`, ~`(4) Full Controls`, ~`(5) Trials After Dem`,
+  "Country Fixed-Effects",   "✓",               "✓",                     "✓",               "✓",                    "✓",
+  "Year Fixed-Effects",      "",                "✓",                     "✓",               "✓",                    "✓",
+  "Economic Controls",       "",                "",                      "",                "✓",                    "✓",
+  "Political Controls",      "",                "",                      "",                "✓",                    "✓",
+  "Repression Controls",     "",                "",                      "",                "✓",                    "✓"
+)
+
+modelsummary(
+  tz_models,
+  coef_map  = tz_coef_map,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars     = c("*" = .1, "**" = .05, "***" = .01),
+  gof_map   = tz_gof_map,
+  add_rows  = tz_control_rows,
+  coef_omit = "Intercept|sigma",
+  title     = "Trials and Support for Democracy in Eight Latin American Countries",
+  notes     = c("* p<0.1, ** p<0.05, *** p<0.01")
+)
+```
+
+```{r}
+latam_codes <- c(32, 68, 76, 152, 218, 600, 604, 858)
+
+mass_t2_supdem <- mass_trials %>%
+  filter(
+    country %in% latam_codes,      
+    !is.na(demsup2),               
+    !is.na(treattrial_support.y),
+    !is.na(left)
+  )
+
+mt_sup <- feols(
+  demsup2 ~ treattrial_support.y * left,
+  data    = mass_t2_supdem,
+  cluster = ~ countryear
+)
+
+mu_sup <- feols(
+  demsup2 ~ treattrial_support.y * left | country + year,
+  data    = mass_t2_supdem,
+  cluster = ~ countryear
+)
+
+mv_sup <- feols(
+  demsup2 ~ treattrial_support.y * left +
+    age + female + educ + i(vote) |
+    country + year,
+  data    = mass_t2_supdem,
+  cluster = ~ countryear
+)
+
+mx_sup <- feols(
+  demsup2 ~ treattrial_support.y * left +
+    age + female + educ +
+    trustjud + trustmilitary + trustpolpar |
+    country + year,
+  data    = mass_t2_supdem,
+  cluster = ~ countryear
+)
+
+my_sup <- feols(
+  demsup2 ~ treattrial_support.y * left +
+    age + female + educ +
+    econcon + econper |
+    country + year,
+  data    = mass_t2_supdem,
+  cluster = ~ countryear
+)
+
+mz_sup <- feols(
+  demsup2 ~ treattrial_support.y * left +
+    age + female + educ +
+    i(vote) +
+    trustjud + trustmilitary + trustpolpar +
+    econcon + econper |
+    country + year,
+  data    = mass_t2_supdem,
+  cluster = ~ countryear
+)
+
+models_supdem <- list(
+  "Model T" = mt_sup,
+  "Model U" = mu_sup,
+  "Model V" = mv_sup,
+  "Model X" = mx_sup,
+  "Model Y" = my_sup,
+  "Model Z" = mz_sup
+)
+
+coef_map_supdem <- c(
+  "treattrial_support.y"       = "Trial",
+  "left"                       = "Left",
+  "treattrial_support.y:left"  = "Trial × Left"
+)
+
+control_rows_supdem <- tribble(
+  ~term,                     ~`Model T`, ~`Model U`, ~`Model V`, ~`Model X`, ~`Model Y`, ~`Model Z`,
+  "Country Fixed-Effects",        "",        "✓",        "✓",        "✓",        "✓",        "✓",
+  "Year Fixed-Effects",           "",        "✓",        "✓",        "✓",        "✓",        "✓",
+  "Socio-Demographics",           "",        "",         "✓",        "✓",        "✓",        "✓",
+  "Vote (partisanship)",          "",        "",         "✓",        "",         "",         "✓",
+  "Governing Party Aligned",      "",        "",         "",         "",         "",         "",
+  "Economic Perceptions",         "",        "",         "",         "",         "✓",        "✓",
+  "Trust Political Institutions", "",        "",         "",         "✓",        "",         "✓"
+)
+
+modelsummary(
+  models_supdem,
+  coef_map  = coef_map_supdem,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars     = c("*" = .01, "**" = .05, "***" = .001),
+  gof_map   = tibble::tribble(
+    ~raw,        ~clean,      ~fmt,
+    "nobs",      "N",         0,
+    "r.squared", "R-squared", 3
+  ),
+  add_rows  = control_rows_supdem,
+  title     = "Interaction of trials and ideology in support for democracy (Eight Latin American countries)",
+  notes     = c("* p<0.1, ** p<0.05, *** p<0.01")
+)
+```
+
+
+## Recreating the article's first table for the eight Latin American cases after correcting transitional justice coding
+
+```{r}
+
+latam8 <- c("Argentina", "Bolivia", "Brazil", "Chile",
+            "Ecuador", "Paraguay", "Peru", "Uruguay")
+
+
+support_latam1 <- supportdem %>%
+  filter(country %in% latam8,
+         trancou == 1,
+         yeartra > 0)
+
+ma <- feols(
+  satisdem ~ treattrial | country,
+  data   = support_latam1,
+  vcov   = ~ country         
+)
+
+mb <- feols(
+  satisdem ~ treattrial | country + year,
+  data   = support_latam1,
+  vcov   = ~ country
+)
+
+mc <- feols(
+  satisdem ~ treattrial + treatamnesty + treattruthco | country + year,
+  data   = support_latam1,
+  vcov   = ~ country
+)
+
+md <- feols(
+  satisdem ~ treattrial + treatamnesty + treattruthco +
+    inflation + gdpca + libdem + changede + kill + disap +
+    v2x_partip + v2xnp_regcorr | country + year,
+  data   = support_latam1,
+  vcov   = ~ country
+)
+
+
+bal_nonmissing <- support_latam1 %>%
+  filter(year %in% 1999:2012) %>%
+  group_by(country) %>%
+  summarise(
+    nonmissing1to7 = sum(!is.na(satisdem)),
+    .groups = "drop"
+  ) %>%
+  filter(nonmissing1to7 %in% 12:14)
+
+df_balanced <- support_latam1 %>%
+  filter(year %in% 1999:2012) %>%
+  semi_join(bal_nonmissing, by = "country")
+
+me <- feols(
+  satisdem ~ treattrial + treatamnesty + treattruthco +
+    inflation + libdem + gdpca + v2x_partip + kill + disap |
+    country + year,
+  data    = df_balanced,
+  cluster = ~ country
+)
+```
+
+Building a regression table with all models side by side:
+
+```{r}
+t1_models <- list(
+  "(1) Country FE"        = ma,
+  "(2) Country + Year FE" = mb,
+  "(3) TJ Controls"       = mc,
+  "(4) Full Controls"     = md,
+  "(5) Trials After Dem" = me
+)
+
+t1_coef_map <- c(
+  "treattrial"   = "Trial",
+  "treatamnesty" = "Amnesty",
+  "treattruthco" = "Truth Commission"
+)
+
+t1_gof_map <- tibble::tribble(
+  ~raw,         ~clean,             ~fmt,
+  "r2_within",  "Within R-squared", 3,
+  "nobs",       "N",                0
+)
+
+modelsummary(
+  t1_models,
+  coef_map  = t1_coef_map,          
+  estimate  = "{estimate}{stars}",  
+  statistic = NULL,
+  stars     = c("***" = 0.005, "*" = 0.01, "**" = 0.05),
+  gof_map   = t1_gof_map,
+  add_rows  = t1_control_rows,      
+  coef_omit = "Intercept|sigma",    
+  title     = "Regression Estimates for Transitional Justice Trials and Satisfaction with Democracy (Eight Latin American Countries)",
+  notes     = c("* p<0.01, ** p<0.05, *** p<0.005")
+)
+```
+
+
+## Recreating Table 2 after adjustments in coding for the eight LatAm countries
+
+Recreating Table 2 after adjusting the transitional justice treatment variables is necessary for ensuring that the micro-level results rest on an empirically accurate and conceptually consistent coding of the treatment. The original article bases his selection of trial years in "MassTrials.dta" on the data available in "Supportdem.dta", meaning that the validity of the interaction effects in Table 2 (trials and ideology) depends entirely on whether the country-year dataset correctly identifies the years in which each country actually experienced transitional justice trials, amnesties, or truth commissions.
+
+Re-estimating Table 2 models with corrected treatment years therefore serves the purpose of restoring construct validity by ensuring that the "trial" indicator in the micro-data actually correspond to real-world exposure to transitional justice processes and providing a direct diagnostic of whether the article's main micro-level findings are robust to historically accurate treatment measurement.
+
+Preparing `mass_trials`:
+
+```{r}
+mass_trials <- mass_trials %>%
+  mutate(countryear = country * 10000 + year) # for clustering later
+
+mass_trials <- mass_trials %>%
+  filter(country %in% latam_codes)
+```
+
+Bringing the correct trial timing from `supportdem` into `mass_trials`:
+
+```{r}
+
+ctry_dict <- tibble(
+  country_name = c("Argentina", "Bolivia", "Brazil", "Chile",
+                   "Ecuador", "Paraguay", "Peru", "Uruguay"),
+  country_code = c(32, 68, 76, 152, 218, 600, 604, 858)
+)
+
+
+support_latam <- supportdem %>%
+  filter(country %in% ctry_dict$country_name) %>%
+  inner_join(ctry_dict,
+             by = c("country" = "country_name")) %>%
+  select(country_code, year, treattrial) %>%
+  rename(country = country_code,
+         treattrial_support = treattrial)
+
+mass_trials <- mass_trials %>%
+  left_join(
+    support_latam,
+    by = c("country", "year")
+  )
+```
+
+Recoding ideology like the author:
+
+```{r}
+mass_trials <- mass_trials %>%
+  mutate(
+    # 1. Replace -8 and -6 with NA, as in Stata's recode
+    ideology = ifelse(ideology %in% c(-8, -6), NA, ideology),
+
+    # 2. Right: ideology > 5
+    right = ifelse(!is.na(ideology) & ideology > 5, 1L, 0L),
+
+    # 3. Left initial: ideology < 5
+    left  = ifelse(!is.na(ideology) & ideology < 5, 1L, 0L),
+
+    # 4. Apply "replace left = 0 if ideology > 4"
+    #    final result: left == 1 only if ideology <= 4
+    left  = ifelse(!is.na(ideology) & ideology > 4, 0L, left),
+
+    # 5. Centrist: ideology == 5
+    centrist = ifelse(!is.na(ideology) & ideology == 5, 1L, 0L)
+  )
+```
+
+Recoding trust and economic variables like the author (rescaling institutional variables and economic perception variables so that higher values consistently reflect higher trust for institutional measures and the same ordinal direction as in the article for economic evaluations):
+
+```{r}
+recode_trust <- function(x) {
+  dplyr::case_when(
+    x == 1 ~ 4,
+    x == 2 ~ 3,
+    x == 3 ~ 2,
+    x == 4 ~ 1,
+    TRUE   ~ x   # keeps NA and other values as they are
+  )
+}
+
+recode_econ <- function(x) {
+  dplyr::case_when(
+    x == 1 ~ 5,
+    x == 2 ~ 4,
+    x == 4 ~ 2,
+    x == 5 ~ 1,
+    TRUE   ~ x
+  )
+}
+
+mass_trials <- mass_trials %>%
+  mutate(
+    # trust variables: higher = *more* trust (as in the Stata recode)
+    trustcon      = recode_trust(trustcon),
+    trustjud      = recode_trust(trustjud),
+    trustchurch   = recode_trust(trustchurch),
+    trustpolice   = recode_trust(trustpolice),
+    trustmilitary = recode_trust(trustmilitary),
+    trustpolpar   = recode_trust(trustpolpar),
+
+    # economic perception variables: recoded as in the Stata script
+    econcon = recode_econ(econcon),
+    econper = recode_econ(econper)
+  )
+```
+
+Building the same models as the author:
+
+```{r}
+# Handling missing data
+mass_t2 <- mass_trials %>%
+  filter(!is.na(satdem4),
+         !is.na(treattrial_support),
+         !is.na(left))
+```
+
+Model T - treatment x left
+
+```{r}
+mt <- feols(
+  satdem4 ~ treattrial_support * left,
+  data = mass_t2,
+  cluster = ~ countryear
+)
+```
+
+Model U - country & year FE
+
+```{r}
+mu <- feols(
+  satdem4 ~ treattrial_support * left | country + year,
+  data = mass_t2,
+  cluster = ~ countryear
+)
+```
+
+Model V - demographics + vote
+
+```{r}
+mv <- feols(
+  satdem4 ~ treattrial_support * left + age + female + educ + i(vote) | country + year,
+  data = mass_t2,
+  cluster = ~ countryear
+)
+```
+
+In model W, he replaces vote with party in power (whether it is aligned with the previous regime or not, but I was unable to do so because he omitted this from the replication materials he sent me)
+
+Model X - add trust controls
+
+```{r}
+mx <- feols(
+  satdem4 ~ treattrial_support * left + age + female + educ +
+    trustjud + trustmilitary + trustpolpar | country + year,
+  data = mass_t2,
+  cluster = ~ countryear
+)
+```
+
+Model Y - add economic evaluations
+
+```{r}
+my <- feols(
+  satdem4 ~ treattrial_support * left + age + female + educ +
+    econcon + econper | country + year,
+  data = mass_t2,
+  cluster = ~ countryear
+)
+```
+
+Model Z - full specification (without party in power, because this information is not available to me)
+
+```{r}
+mz <- feols(
+  satdem4 ~ treattrial_support * left +
+    age + female + educ +
+    i(vote) +
+    trustjud + trustmilitary + trustpolpar +
+    econcon + econper |
+    country + year,
+  data = mass_t2,
+  cluster = ~ countryear
+)
+```
+
+Producing Table 2:
+
+```{r}
+models <- list(
+  "Model T" = mt,
+  "Model U" = mu,
+  "Model V" = mv,
+  "Model X" = mx,
+  "Model Y" = my,
+  "Model Z" = mz
+)
+
+coef_map <- c(
+  "treattrial_support"        = "Trial",
+  "left"         = "Left",
+  "treattrial_support:left"   = "Trial × Left"
+)
+
+control_rows <- tribble(
+  ~term,                     ~`Model T`, ~`Model U`, ~`Model V`, ~`Model X`, ~`Model Y`, ~`Model Z`,
+  "Country Fixed-Effects",        "",        "✓",        "✓",        "✓",        "✓",        "✓",
+  "Year Fixed-Effects",           "",        "✓",        "✓",        "✓",        "✓",        "✓",
+  "Socio-Demographics",           "",        "",         "✓",        "✓",        "✓",        "✓",
+  "Vote (partisanship)",          "",        "",         "✓",        "",         "",         "✓",
+  "Governing Party Aligned",      "",        "",         "",         "",        "",         "",
+  "Economic Perceptions",         "",        "",         "",         "",         "",         "✓",
+  "Trust Political Institutions", "",        "",         "",         "",         "✓",        "✓"
+)
+
+modelsummary(
+  models,
+  coef_map  = coef_map,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars     = c("*" = .01, "**" = .05, "***" = .001),
+  gof_map   = tibble::tribble(
+    ~raw,        ~clean,      ~fmt,
+    "n",         "N",         0,
+    "r.squared", "R-squared", 3
+  ),
+  add_rows  = control_rows,
+  title = "Re-design of Table 2 with corrected coding (Results of the interaction of trials and ideology in satisfaction with democracy)",
+  notes     = c("* p<0.1, ** p<0.05, *** p<0.01")
+)
+```
+
+## Replicating the main models using the raw country-year averages of satisfaction with democracy from original survey-data (e.g. Latinobarómetro)
+
+Due to space and time constraints, I do not implement this additional robustness check that would replace Claassen's satisfaction with democracy index with raw country-year averages computed directly from the underlying survey data (e.g., Latinobarómetro). Conceptually, this extension would allow me to assess whether the results depend on the particular measurement model used to aggregate individual responses into a macro-level index. However, constructing harmonized country-year averages from the original micro-data would require substantial additional data cleaning and merging work that goes beyond the scope of this 3,000-word replication paper. I therefore leave a systematic comparison between Claassen's index and raw survey-based aggregates as an avenue for future research.
+
+## Using trust in courts, the military, and political parties as dependent variables
+
+To probe whether the observed increase in satisfaction with democracy reflects a broader improvement in confidence in state actors, I extend the author's Argentina-only analysis (Table 14) to the full sample of eight Latin American countries. Specifically, I re-estimate models where trust in the judiciary, the armed forces, and political parties serve as dependent variables, using the same trial indicator and left-right distinction. Each regression includes country and year fixed effects, as well as ideology, age, gender, education, and economic perceptions as controls, mirroring the specification used for Argentina but replacing regional fixed effects with country fixed effects.
+
+These tests serve as a discriminant validity check: if transitional justice trials simply generate a general increase in positive sentiments around democratic institutions, then we would expect trust in key state actors to rise alongside satisfaction with democracy. However, if trials primarily operate through the mechanism theorized in the article, i.e., by signaling a renewed commitment to democratic principles, then their effects should be strongest for evaluations of the democratic regime rather than for confidence in specific institutions.
+
+This distinction matters because courts, the military, and political parties play direct roles in transitional justice, and changes in their perceived legitimacy could plausibly mediate or confound the relationship between trials and democratic satisfaction. By extending the author's Argentina-only analysis of institutional trust to the full set of eight countries, I assess whether the observed patterns reflect a general positivity effect or a more targeted reassessment of democratic performance. This allows for a more precise evaluation of whether the signaling effect of trials is regime-oriented rather than institution-specific.
+
+```{r}
+# Handling Missing Data
+mass_trust <- mass_trials %>%
+  filter(
+    !is.na(trustjud),
+    !is.na(trustmilitary),
+    !is.na(trustpolpar),
+    !is.na(treattrial_support),
+    !is.na(left),
+    !is.na(ideology),
+    !is.na(age),
+    !is.na(female),
+    !is.na(educ),
+    !is.na(econcon),
+    !is.na(econper)
+  )
+```
+
+### Trust in Courts
+
+```{r}
+m_jud <- feols(
+  trustjud ~ treattrial_support * left +
+    ideology + educ + female + age +
+    econcon + econper |
+    country + year,
+  data = mass_trust,
+  cluster = ~ countryear
+)
+```
+
+### Trust in Military
+
+```{r}
+m_mil <- feols(
+  trustmilitary ~ treattrial_support * left +
+    ideology + educ + female + age +
+    econcon + econper |
+    country + year,
+  data = mass_trust,
+  cluster = ~ countryear
+)
+```
+
+### Trust in Political Parties
+
+```{r}
+m_party <- feols(
+  trustpolpar ~ treattrial_support * left +
+    ideology + educ + female + age +
+    econcon + econper |
+    country + year,
+  data = mass_trust,
+  cluster = ~ countryear
+)
+```
+
+### 8-country version of Table 14
+
+```{r}
+trust_models <- list(
+  "Judicial System"   = m_jud,
+  "Military"          = m_mil,
+  "Political Parties" = m_party
+)
+
+trust_coef_map <- c(
+  "treattrial_support"        = "Trial",
+  "left"                      = "Left",
+  "treattrial_support:left"   = "Trial × Left"
+)
+
+trust_control_rows <- tibble::tribble(
+  ~term,                 ~`Judicial System`, ~`Military`, ~`Political Parties`,
+  "Country Fixed-Effects",  "✓",              "✓",          "✓",
+  "Year Fixed-Effects",     "✓",              "✓",          "✓",
+  "Socio-Demographics",     "✓",              "✓",          "✓",
+  "Economic Perceptions",   "✓",              "✓",          "✓",
+  "Ideology",               "✓",              "✓",          "✓"
+)
+
+modelsummary(
+  trust_models,
+  coef_map  = trust_coef_map,
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars     = c("*" = .1, "**" = .05, "***" = .01),
+  gof_map   = tibble::tribble(
+    ~raw,        ~clean,      ~fmt,
+    "n",         "N",         0,
+    "r.squared", "R-squared", 3
+  ),
+  add_rows  = trust_control_rows,
+  title = "Transitional Justice Trials and Trust in Institutions (Eight Latin American Countries)",
+  notes     = c("* p<0.1, ** p<0.05, *** p<0.01")
+)
+```
+
+# Evaluating whether amnesty or truth commissions condition the effect of trials (interaction models)
+
+A distinctive feature of transitional justice processes is that criminal prosecutions rarely occur in isolation. Instead, they typically coexist with other mechanisms, most notably amnesty laws and truth commissions, that may either reinforce or weaken the political signals produced by trials. In the original article, amnesty and truth commission indicators enter the regressions only as additive control variables. This specification estimates whether trials increase satisfaction with democracy holding constant the presence of amnesties or truth commissions, but it does not evaluate whether these mechanisms meaningfully interact with one another.
+
+To address this, I estimate a set of interaction models that allow the impact of trials to vary depending on the presence of amnesties and truth commissions. Conceptually, this approach examines whether trials send different political or normative signals when they occur in environments characterized by legal impunity or by institutional efforts to uncover past abuses.
+
+Introducing interaction terms constitutes a substantively different and theoretically richer inquiry. Instead of treating trials, amnesties, and truth commissions as independent signals, the extended models evaluate whether their effects are conditional on one another. This is especially relevant to the signaling argument advanced in the article: while trials are said to communicate a firm break with the autocratic past, amnesties often convey the opposite signal, i.e., leniency toward former regime actors. The author's own discussion of Argentina suggests that amnesties can "annul" the meaning of trials, yet this hypothesis is never tested empirically. Interaction models allow us to assess whether the positive effect of trials is weakened, cancelled, or even reversed when they occur in contexts marked by amnesty laws. Likewise, evaluating whether truth commissions amplify the legitimacy-enhancing effects of trials sheds light on whether transitional justice instruments function as complements in a broader accountability "package."
+
+I also estimate stratified subsample models that re-run the main specifications separately in country-years with and without amnesties, and with and without truth commissions. Subsample models are especially useful when treatment interactions may be strong, when groups differ meaningfully in size or institutional structure, and when theoretical arguments suggest that trials may send different signals depending on whether they occur alongside impunity or truth-seeking mechanisms. By comparing results across these stratified samples, I can evaluate whether the democratic effects of trials are concentrated in particular institutional contexts, suppressed under amnesty regimes, or amplified when accompanied by truth-commission processes. This provides a conceptually intuitive and transparent complementary test to interaction models, helping illuminate whether transitional justice instruments function as substitutes or complements in shaping public perceptions of democracy.
+
+## Amnesty Interaction Term
+
+First, I estimate models including an interaction between trials and amnesties. A negative interaction term would suggest that amnesties partially obstruct the accountability signal that trials are meant to convey, reducing their positive effect on democratic satisfaction. Conversely, a null interaction would indicate that the author's original assumption, that amnesties do not meaningfully condition trial effects, holds in practice.
+
+```{r}
+mb1 <- feols(
+  satisdem ~ treattrial * treatamnesty +
+    inflation + gdpca + libdem + changede +
+    kill + disap + v2x_partip + v2xnp_regcorr |
+    country + year,
+  data = dfclean,
+  cluster = ~ country
+)
+
+summary(mb1)
+```
+
+### Trial effect in years with no amnesty
+
+```{r}
+mb3 <- feols(
+  satisdem ~ treattrial +
+    inflation + gdpca + libdem + changede +
+    kill + disap + v2x_partip + v2xnp_regcorr |
+    country + year,
+  data = dfclean %>% filter(treatamnesty == 0),
+  cluster = ~ country
+)
+summary(mb3)
+```
+
+### Trial effect in years with amnesty
+
+```{r}
+mb4 <- feols(
+  satisdem ~ treattrial +
+    inflation + gdpca + libdem + changede +
+    kill + disap + v2x_partip + v2xnp_regcorr |
+    country + year,
+  data = dfclean %>% filter(treatamnesty == 1),
+  cluster = ~ country
+)
+summary(mb4)
+```
+
+## Truth Commissions Interaction Term
+
+Next, I interact trials with truth commissions to assess whether commissions amplify, substitute for, or leave unchanged the signaling role of prosecutions. If trials are more effective in contexts where a truth commission has already established a public record of past abuses, this would indicate a complementarity between restorative and retributive mechanisms. If the interaction is null, this suggests that each mechanism operates independently.
+
+```{r}
+mb2 <- feols(
+  satisdem ~ treattrial * treattruthco +
+    inflation + gdpca + libdem + changede +
+    kill + disap + v2x_partip + v2xnp_regcorr |
+    country + year,
+  data = dfclean,
+  cluster = ~ country
+)
+
+summary(mb2)
+```
+
+### Trial effect in years with no truth commission
+
+```{r}
+mb5 <- feols(
+  satisdem ~ treattrial +
+    inflation + gdpca + libdem + changede +
+    kill + disap + v2x_partip + v2xnp_regcorr |
+    country + year,
+  data = dfclean %>% filter(treattruthco == 0),
+  cluster = ~ country
+)
+
+summary(mb5)
+```
+
+### Trial effect in years with truth commissions
+
+```{r}
+mb6 <- feols(
+  satisdem ~ treattrial +
+    inflation + gdpca + libdem + changede +
+    kill + disap + v2x_partip + v2xnp_regcorr |
+    country + year,
+  data = dfclean %>% filter(treattruthco == 1),
+  cluster = ~ country
+)
+
+summary(mb6)
+```
+
+Creating tables to summarize the models:
+
+*Arrumar p-values*:
+
+```{r}
+models_b <- list(
+  "Amnesty IT"   = mb1,
+  "TC IT"        = mb2,
+  "No amnesty"   = mb3,
+  "With amnesty" = mb4,
+  "No TC"        = mb5,
+  "With TC"      = mb6
+)
+
+tab_mb <- modelsummary(
+  models_b,
+  coef_map = c("treattrial" = "Trial"),
+  statistic = "({std.error})",   
+  gof_map = tibble::tribble(   
+    ~raw,        ~clean,            ~fmt,
+    "nobs",      "N",               0,
+    "r2_within", "Within R-squared", 3
+  ),
+  stars = c("***" = 0.001, "**" = 0.005, "*" = 0.01), 
+  title = "Associations Between TJ Trials and Satisfaction with Democracy Across Alternative Specifications (models mb1–mb6)"
+)
+
+tab_mb
+```
+
+# Assessing identification and robustness
+
+## Visualizing pre-treatment trends by adding placebo leads of the trial variable and plotting coefficients
+
+This is a second extension I do not pursue here. Adding leads of the treatment and plotting their coefficients in an event-study framework would help assess whether treated and not-yet-treated country-years followed parallel trajectories in satisfaction with democracy prior to the onset of trials. While this would provide a valuable diagnostic of the identifying assumptions behind the difference-in-differences specification, implementing and fully explaining a dynamic design and associated figures would require more space than is available in this assignment. Given the word limit, I prioritize careful documentation of the coding corrections, the replication of the main models, and a set of targeted robustness checks (alternative outcome, institutional trust, interaction models, and a leave-one-out analysis). A fuller dynamic analysis of pre- and post-trial trends is therefore also left for future work.
+
+## Re-estimating the models after excluding influential countries
+
+To evaluate whether the findings are driven disproportionately by any single country, I conduct a leave-one-out robustness analysis. For each of the eight Latin American cases, I re-estimate the full specification after excluding that country from the sample. This jackknife procedure assesses the stability of the estimated effect of transitional justice trials in satisfaction with democracy under changes in sample composition.
+
+If the coefficient on the trial variable remains similar in sign and magnitude across the eight iterations, this indicates that the relationship is not the artifact of one influential case. Conversely, substantial variation would suggest that the results are sensitive to particular country trajectories.
+
+This diagnostic does not require re-estimating the full set of models using more complex estimators and therefore fits the scope of the replication while still providing an informative identification check.
+
+```{r}
+countries <- unique(dfclean$country)
+countries
+```
+
+```{r}
+loo_results <- list()
+
+for(c in countries){
+
+  # Drop one country
+  df_loo <- dfclean %>% filter(country != c)
+
+  # Re-estimate the full model
+  md_loo <- feols(
+    satisdem ~ treattrial + treatamnesty + treattruthco +
+      inflation + gdpca + libdem + changede + kill + disap +
+      v2x_partip + v2xnp_regcorr | country + year,
+    data = df_loo,
+  cluster = ~ country
+  )
+  
+  # Store the model with a name
+  loo_results[[paste0("No ", c)]] <- md_loo
+}
+```
+
+When plotting this table, I noticed that sample size varies slightly across iterations (117-118 observations). This happens because countries contribute different numbers of complete cases to the final specification after listwise deletion.
+
+```{r}
+modelsummary::modelsummary(
+  loo_results,
+  
+  estimate  = "{estimate}{stars} ({std.error})",
+  statistic = NULL,
+  stars     = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+
+  coef_map  = c("treattrial" = "Trial"),
+  
+  gof_map   = tibble::tribble(
+    ~raw,        ~clean,             ~fmt,
+    "r2_within", "Within R-squared", 3,
+    "nobs",      "N",                0
+  ),
+  
+  title = "Leave-One-Out Robustness Test: Trials and Satisfaction with Democracy in Eight Latin American Countries",
+  
+  notes = c("* p < 0.1, ** p < 0.05, *** p < 0.01")
+)
+```
+
+P.S.: In all models, I cluster standard errors to account for dependence in the error terms that would otherwise lead to overconfident inferences. In the country-year panel regressions based on "Supportdem.dta", I cluster at the country level, because both the treatment (transitional justice measures) and many omitted shocks vary at the country level and may induce serial correlation in the outcome within countries over time. Clustering by country allows for arbitrary correlation of errors across years within each country, which is the usual practice in difference-in-differences settings.
+
+In the individual-level regressions based on MassTrials.dta, I instead cluster at the country-year level, because treatment varies only at this level and many respondents within the same country-year share the same institutional context and macro conditions. Clustering this way therefore allows for arbitrary correlation of errors among individuals who are exposed to the same trial context, while treating observations across different country-years as independent.
