@@ -1,3 +1,3 @@
 # ps403-replication-paper
 
-Hi everyone, this is my new repository.
+Repository for PS403's Replication Paper.
